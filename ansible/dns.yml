@@ -1,0 +1,19 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Répertoire des déploiements
+    file:
+      path: /root/deployments/dns
+      state: directory
+
+  - name: Configuration dns
+    template:
+      src: dns/kube-dns.yaml
+      dest: /root/deployments/dns
+
+  - name: kube-dns
+    shell: kubectl create -f /root/deployments/dns/kube-dns.yaml

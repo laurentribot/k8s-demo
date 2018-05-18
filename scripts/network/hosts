@@ -1,0 +1,4 @@
+192.168.56.10 k8s-demo my-docker-registry
+192.168.56.11 k8s-controller
+192.168.56.12 k8s-worker-0
+192.168.56.13 k8s-worker-1

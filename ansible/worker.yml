@@ -1,0 +1,229 @@
+---
+- hosts: workers
+  gather_facts: yes
+
+  tasks:
+
+  - name: Workers facts
+    setup:
+    delegate_to: "{{ item }}"
+    register: workers_facts
+    with_items: "{{ groups['workers'] }}"
+
+
+- hosts: workers
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation de socat conntrack ipset
+    apt:
+      name: "{{ item }}"
+    with_items:
+    - socat
+    - conntrack
+    - ipset
+
+  - name: Création des répertoires
+    file:
+      state: directory
+      path: "{{ item }}"
+    with_items:
+    - /etc/cni/net.d
+    - /etc/containerd/
+    - /opt/cni/bin
+    - /var/lib/kubelet
+    - /var/lib/kube-proxy
+    - /var/lib/kubernetes
+    - /var/run/kubernetes
+
+  - name: Installation des binaires
+    copy:
+      src: /vagrant_data/binaries/{{ item }}
+      dest: /usr/local/bin
+      mode: 0755
+      remote_src: yes
+    with_items:
+    - kubectl
+    - kube-proxy
+    - kubelet
+    - flanneld
+    - etcd-2.3.7/etcd
+    - etcd-2.3.7/etcdctl
+
+  - name: Installation des binaires
+    copy:
+      src: /vagrant_data/binaries/{{ item }}
+      dest: /usr/local/bin
+      mode: 0755
+      remote_src: yes
+    with_items:
+    - runc
+    - runsc
+
+  - name: Extraction des archives
+    unarchive:
+      src: /vagrant_data/binaries/{{ item.src }}
+      dest: "{{ item.dest }}"
+      owner: root
+      group: root
+    with_items:
+    - src: crictl-v1.0.0-beta.0-linux-amd64.tar.gz
+      dest: /usr/local/bin/
+    - src: cni-plugins-amd64-v0.6.0.tgz
+      dest: /opt/cni/bin/
+    - src: containerd-1.1.0.linux-amd64.tar.gz
+      dest: /
+
+  - name: config AC
+    copy:
+      src: /root/enrolment/certs/ca.pem
+      dest: /usr/local/share/ca-certificates/k8s.crt
+
+  - name: config AC
+    shell: update-ca-certificates
+
+  - name: Config bridge
+    copy:
+      src: worker/99-loopback.conf
+      dest: /etc/cni/net.d
+
+  - name: Config containerd
+    template:
+      src: worker/containerd.conf
+      dest: /etc/containerd/config.toml
+
+  - name: Config
+    copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+    with_items:
+    - src: /root/enrolment/certs/{{ inventory_hostname }}-key.pem
+      dest: /var/lib/kubelet/
+    - src: /root/enrolment/certs/{{ inventory_hostname }}.pem
+      dest: /var/lib/kubelet/
+    - src: /root/k8s_config/{{ inventory_hostname }}.kubeconfig
+      dest: /var/lib/kubelet/kubeconfig
+    - src: /root/enrolment/certs/ca.pem
+      dest: /var/lib/kubernetes/
+    - src: /root/k8s_config/kube-proxy.kubeconfig
+      dest: /var/lib/kube-proxy/kubeconfig
+
+  - name: Config
+    template:
+      src: worker/kube-proxy-config.yaml
+      dest: /var/lib/kube-proxy/
+
+  - name: Services
+    copy:
+      src: worker/{{ item }}
+      dest: /etc/systemd/system/
+    with_items:
+    - containerd.service
+    - kube-proxy.service
+
+  - name: Services
+    template:
+      src: worker/{{ item }}
+      dest: /etc/systemd/system/
+    with_items:
+    - kubelet.service
+    - etcd.service
+    - flanneld.service
+
+  - name: Démarrage des services
+    systemd:
+      name: etcd
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+
+  - name: Check de la config dans etcd
+    shell: etcdctl get /coreos.com/network/config | grep Error
+    register: etcd_init
+    failed_when: false
+
+  - name: Initialisation etcd
+    shell: etcdctl mk /coreos.com/network/config '{"Network":"{{ cluster_cidr }}","SubnetLen":24,"Backend":{"Type":"vxlan"}}'
+    run_once: true
+    when: etcd_init.stderr != ''
+
+  - name: Démarrage des services
+    systemd:
+      name: flanneld
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+
+  - name: Tempo
+    wait_for:
+      path: /run/flannel/subnet.env
+      state: present
+      timeout: 60
+
+  - name: Récupération du cidr
+    shell: cat /run/flannel/subnet.env | grep FLANNEL_SUBNET | cut -d'=' -f2
+    register: subnet
+
+  - name: Config kubelet
+    template:
+      src: worker/kubelet-config.yaml
+      dest: /var/lib/kubelet/
+
+  - name: Config bridge
+    template:
+      src: worker/10-bridge.conf
+      dest: /etc/cni/net.d
+
+  - name: Démarrage des services
+    systemd:
+      name: "{{ item }}"
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+    with_items:
+    - containerd
+    - kubelet
+    - kube-proxy
+
+  - name: Chargement de l'image pause
+    shell: ctr cri load /vagrant_data/images/k8s.gcr.io-pause-3.1.tar
+
+
+- hosts: controllers
+  gather_facts: yes
+
+  tasks:
+
+  - name: Workers facts
+    setup:
+    delegate_to: "{{ item }}"
+    register: workers_facts
+    with_items: "{{ groups['workers'] }}"
+
+
+- hosts: controllers
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation de flanneld
+    copy:
+      src: /vagrant_data/binaries/flanneld
+      dest: /usr/local/bin
+      mode: 0755
+      remote_src: yes
+
+  - name: Service flanneld
+    template:
+      src: worker/flanneld.service
+      dest: /etc/systemd/system/
+
+  - name: Démarrage des services
+    systemd:
+      name: flanneld
+      daemon_reload: yes
+      enabled: yes
+      state: restarted

@@ -1,0 +1,116 @@
+---
+- hosts: localhost
+  gather_facts: no
+
+  tasks:
+
+  - name: Workers facts
+    setup:
+    delegate_to: "{{ item }}"
+    register: workers_facts
+    with_items: "{{ groups['workers'] }}"
+
+  - name: Controllers facts
+    setup:
+    delegate_to: "{{ item }}"
+    register: controllers_facts
+    with_items: "{{ groups['controllers'] }}"
+
+
+- hosts: localhost
+  gather_facts: True
+  become: yes
+
+  tasks:
+
+  - name: Installation de cfssl
+    copy:
+      src: /vagrant_data/binaries/cfssl_linux-amd64
+      dest: /usr/local/bin/cfssl
+      mode: 0755
+      remote_src: yes
+
+  - name: Installation de cfssljson
+    copy:
+      src: /vagrant_data/binaries/cfssljson_linux-amd64
+      dest: /usr/local/bin/cfssljson
+      mode: 0750
+      remote_src: yes
+
+  - name: Répertoire d'enrolment
+    file:
+      state: directory
+      path: "{{ item }}"
+    with_items:
+    - /root/enrolment/config
+    - /root/enrolment/certs
+
+  - name: Copie des csr
+    copy:
+      dest: /root/enrolment/config
+      src: tls/{{ item }}
+    with_items:
+    - admin-csr.json
+    - ca-config.json
+    - ca-csr.json
+    - kube-controller-manager-csr.json
+    - kube-proxy-csr.json
+    - kubernetes-csr.json
+    - kube-scheduler-csr.json
+    - service-account-csr.json
+
+  - name: Copie des csr
+    template:
+      dest: /root/enrolment/config/
+      src: tls/docker-registry-csr.json
+
+  - name: Copie des csr
+    template:
+      dest: /root/enrolment/config/{{ item }}-csr.json
+      src: tls/k8s-worker-csr.json
+    vars:
+      node_name: "{{ item }}"
+    with_items: "{{ workers_facts.results | map(attribute='ansible_facts.ansible_hostname') | list }}"
+
+  - name: Génération de l'AC
+    shell: cfssl gencert -initca /root/enrolment/config/ca-csr.json | cfssljson -bare ca
+    args:
+      chdir: /root/enrolment/certs
+
+  - name: Génération des certificats
+    shell: cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=/root/enrolment/config/ca-config.json {% if item.hostnames | d(false) %} -hostname={{ item.hostnames | join(',') }}{% endif %} -profile=kubernetes {{ item.csr }} | cfssljson -bare {{ item.name }}
+    args:
+      chdir: /root/enrolment/certs
+    with_items:
+    - csr: /root/enrolment/config/admin-csr.json
+      name: admin
+    - csr: /root/enrolment/config/kube-controller-manager-csr.json
+      name: kube-controller-manager
+    - csr: /root/enrolment/config/kube-proxy-csr.json
+      name: kube-proxy
+    - csr: /root/enrolment/config/kube-scheduler-csr.json
+      name: kube-scheduler
+    - csr: /root/enrolment/config/service-account-csr.json
+      name: service-account
+    - csr: /root/enrolment/config/kubernetes-csr.json
+      name: kubernetes
+      hostnames: "{{ (controllers_facts.results | map(attribute='ansible_facts.ansible_enp0s8.ipv4.address') | list) + [ internal_virtual_ip, '127.0.0.1', 'kubernetes.default' ] }}"
+    - csr: /root/enrolment/config/docker-registry-csr.json
+      name: "{{ docker_registry | regex_replace (':[0-9]*$', '') }}"
+      hostnames:
+      - "{{ docker_registry | regex_replace (':[0-9]*$', '') }}"
+      - "{{ ansible_enp0s8.ipv4.address }}"
+    loop_control:
+      label: "{{ item.name }}"
+
+  - name: Génération des certificats
+    shell: cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=/root/enrolment/config/ca-config.json {% if item_hostnames | d(false) %} -hostname={{ item_hostnames | join(',') }}{% endif %} -profile=kubernetes {{ item_csr }} | cfssljson -bare {{ item_name }}
+    args:
+      chdir: /root/enrolment/certs
+    vars:
+      item_hostnames: [ "{{ item.ansible_facts.ansible_hostname }}", "{{ item.ansible_facts.ansible_enp0s8.ipv4.address }}" ]
+      item_csr: /root/enrolment/config/{{ item.ansible_facts.ansible_hostname }}-csr.json
+      item_name: "{{ item.ansible_facts.ansible_hostname }}"
+    with_items: "{{ workers_facts.results }}"
+    loop_control:
+      label: "{{ item.ansible_facts.ansible_hostname }}"
