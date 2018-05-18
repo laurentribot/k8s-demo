@@ -1,0 +1,16 @@
+{
+  "CN": "system:node:{{ node_name }}",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "FR",
+      "L": "Paris",
+      "O": "system:nodes",
+      "OU": "k8s",
+      "ST": "Paris"
+    }
+  ]
+}

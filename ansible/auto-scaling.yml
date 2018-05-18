@@ -1,0 +1,50 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Import des images
+    docker_image:
+      state: present
+      load_path: /vagrant_data/images/{{ item.file }}
+      name: "{{ item.name }}"
+    with_items:
+    - name: quay.io/coreos/prometheus-operator:v0.19.0
+      file: prometheus-operator-v0.19.0.tar
+    - name: quay.io/coreos/configmap-reload:v0.0.1
+      file: configmap-reload-v0.0.1.tar
+    - name: luxas/k8s-prometheus-adapter:v0.2.0-beta.0
+      file: k8s-prometheus-adapter-v0.2.0-beta.0.tar
+    - name: prom/prometheus:v2.2.1
+      file: prometheus-v2.2.1.tar
+    - name: quay.io/coreos/prometheus-config-reloader:v0.0.4
+      file: prometheus-config-reloader-v0.0.4.tar
+
+  - name: Import des images
+    include_tasks: includes/import_image.yml image_src={{ item.src }} image_dest={{ docker_registry }}/{{ item.dest }}
+    with_items:
+    - src: quay.io/coreos/prometheus-operator
+      dest: prometheus-operator:v0.19.0
+    - src: quay.io/coreos/configmap-reload
+      dest: configmap-reload:v0.0.1
+    - src: luxas/k8s-prometheus-adapter
+      dest: k8s-prometheus-adapter:v0.2.0-beta.0
+    - src: prom/prometheus
+      dest: prometheus:v2.2.1
+    - src: quay.io/coreos/prometheus-config-reloader
+      dest: prometheus-config-reloader:v0.0.4
+
+  - name: Prometheus operator
+    shell: kubectl apply -f /ansible/files/auto-scaling/prometheus-operator.yaml
+
+  - name: Tempo
+    pause:
+      seconds: 10
+
+  - name: Prometheus instance
+    shell: kubectl apply -f /ansible/files/auto-scaling/prometheus-instance.yaml
+
+  - name: Api metrics
+    shell: kubectl apply -f /ansible/files/auto-scaling/custom-metrics.yaml

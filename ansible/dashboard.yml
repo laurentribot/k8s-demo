@@ -1,0 +1,65 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Répertoire déploiement
+    file:
+      path: /root/deployments/dashboard
+      state: directory
+
+  - name: Config
+    copy:
+      src: dashboard/dashboard-authorization.yaml
+      dest: /root/deployments/dashboard/
+
+  - name: Config
+    template:
+      src: dashboard/kubernetes-dashboard.yaml
+      dest: /root/deployments/dashboard/
+
+  - name: kube-dashboard
+    shell: kubectl create -f /root/deployments/dashboard/kubernetes-dashboard.yaml
+
+  - name: Installation de nginx
+    apt:
+      name: nginx
+
+  - name: Suppression configuration par défaut
+    file:
+      path: /etc/nginx/sites-enabled/default
+      state: absent
+
+  - name: Config nginx
+    copy:
+      dest: /etc/nginx/sites-available/kubernetes.dashboard
+      content: |
+        server {
+          listen      80;
+          server_name kubernetes.dashboard;
+
+          location / {
+             proxy_pass                    https://{{ public_ip }}:6443/api/v1/namespaces/kube-system/services/https:kubernetes-dashboard:/proxy/;
+             proxy_ssl_trusted_certificate /root/enrolment/certs/ca.pem;
+             proxy_ssl_certificate         /root/enrolment/certs/admin.pem;
+             proxy_ssl_certificate_key     /root/enrolment/certs/admin-key.pem;
+          }
+        }
+
+  - name: Lien symbolique
+    file:
+      state: link
+      src: /etc/nginx/sites-available/kubernetes.dashboard
+      dest: /etc/nginx/sites-enabled/kubernetes.dashboard
+
+  - name: Redémarrage de nginx
+    systemd:
+      name: nginx
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
+
+  - name: Authorization
+    shell: kubectl create -f /root/deployments/dashboard/dashboard-authorization.yaml

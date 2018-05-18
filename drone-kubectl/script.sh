@@ -1,0 +1,3 @@
+export KUBECONFIG=${PLUGIN_CONFIG}
+
+kubectl apply -f ${PLUGIN_MANIFEST}

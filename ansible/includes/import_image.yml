@@ -1,0 +1,10 @@
+---
+- name: Image {{ image_src }}
+  shell: docker image ls | grep "^{{ image_src }}" | awk '{print $3}'
+  register: image_id
+
+- name: Tag image {{ image_src }}
+  shell: docker tag {{ image_id.stdout }} {{ image_dest }}
+
+- name: Push image {{ image_src }}
+  shell: docker push {{ image_dest }}

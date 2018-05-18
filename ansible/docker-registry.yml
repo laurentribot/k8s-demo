@@ -1,0 +1,108 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation de docker
+    apt:
+      name: docker.io
+
+  - name: Génération des certificats
+    shell: cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=/root/enrolment/config/ca-config.json -hostname={{ docker_registry | regex_replace (':[0-9]*$', '') }},{{ ansible_enp0s8.ipv4.address }} -profile=kubernetes /root/enrolment/config/docker-registry-csr.json | cfssljson -bare docker-registry
+    args:
+      chdir: /root/enrolment/certs
+
+  - name: Import des images
+    docker_image:
+      state: present
+      load_path: /vagrant_data/images/{{ item.file }}
+      name: "{{ item.name }}"
+    with_items:
+    - name: registry
+      file: registry-latest.tar
+    - name: k8s.gcr.io/pause:3.1
+      file: k8s.gcr.io-pause-3.1.tar
+    - name: nginx
+      file: nginx-latest.tar
+    - name: busybox
+      file: busybox-latest.tar
+    - name: gcr.io/google_containers/k8s-dns-kube-dns-amd64:1.14.7
+      file: k8s-dns-kube-dns-amd64-1.14.7.tar
+    - name: gcr.io/google_containers/k8s-dns-dnsmasq-nanny-amd64:1.14.7
+      file: k8s-dns-dnsmasq-nanny-amd64-1.14.7.tar
+    - name: gcr.io/google_containers/k8s-dns-sidecar-amd64:1.14.7
+      file: k8s-dns-sidecar-amd64-1.14.7.tar
+    - name: alpine
+      file: alpine-latest.tar
+    - name: k8s.gcr.io/kubernetes-dashboard-amd64:v1.8.3
+      file: kubernetes-dashboard-amd64-v1.8.3.tar
+    - name: byrnedo/alpine-curl
+      file: alpine-curl-latest.tar
+    - name: coredns/coredns:1.1.3
+      file: coredns-1.1.3.tar
+
+  - name: Service Docker
+    file:
+      state: directory
+      path: /etc/systemd/system/docker.service.d
+
+  - name: Service Docker
+    copy:
+      dest: /etc/systemd/system/docker.service.d/docker.conf
+      content: |
+        [Service]
+        ExecStart=
+        ExecStart=/usr/bin/dockerd -H fd:// --insecure-registry {{ docker_registry }}
+
+  - name: Restart docker
+    systemd:
+      name: docker
+      state: restarted
+      daemon_reload: yes
+
+  - name: Démarrage du registry
+    docker_service:
+      project_name: registry
+      state: present
+      restarted: yes
+      definition:
+        version: '2'
+
+        services:
+          registry:
+            image: registry:latest
+            volumes:
+            - /root/enrolment/certs:/certs
+            ports:
+            - 5443:443
+            restart: always
+            environment:
+              REGISTRY_HTTP_ADDR: 0.0.0.0:443
+              REGISTRY_HTTP_TLS_CERTIFICATE: /certs/docker-registry.pem
+              REGISTRY_HTTP_TLS_KEY: /certs/docker-registry-key.pem
+
+  - name: Import des images
+    include_tasks: includes/import_image.yml image_src={{ item.src }} image_dest={{ docker_registry }}/{{ item.dest }}
+    with_items:
+    - src: k8s.gcr.io/pause
+      dest: pause:3.1
+    - src: nginx
+      dest: nginx:latest
+    - src: busybox
+      dest: busybox:latest
+    - src: gcr.io/google_containers/k8s-dns-sidecar-amd64
+      dest: k8s-dns-sidecar-amd64:1.14.7
+    - src: gcr.io/google_containers/k8s-dns-kube-dns-amd64
+      dest: k8s-dns-kube-dns-amd64:1.14.7
+    - src: gcr.io/google_containers/k8s-dns-dnsmasq-nanny-amd64
+      dest: k8s-dns-dnsmasq-nanny-amd64:1.14.7
+    - src: alpine
+      dest: alpine:latest
+    - src: k8s.gcr.io/kubernetes-dashboard-amd64
+      dest: kubernetes-dashboard-amd64:v1.8.3
+    - src: byrnedo/alpine-curl
+      dest: alpine-curl:latest
+    - src: coredns/coredns
+      dest: coredns:1.1.3

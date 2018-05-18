@@ -1,1 +1,12 @@
 .vagrant
+*.iml
+*.retry
+*.pcap
+*.log
+*/admin.kubeconfig
+wrapper-go/.git
+dlp-pki-dev/.git
+argparse/.git
+wrapper-go/.gitignore
+dlp-pki-dev/.gitignore
+argparse/.gitignore

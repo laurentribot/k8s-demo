@@ -1,0 +1,180 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation docker-compose
+    copy:
+      remote_src: yes
+      src: /vagrant_data/binaries/docker-compose
+      dest: /usr/local/bin/
+      mode: 0755
+
+  - name: Chargement de l'image gogs
+    docker_image:
+      state: present
+      load_path: /vagrant_data/images/gogs-latest.tar
+      name: gogs:latest
+
+  - name: Répertoires pour gogs
+    file:
+      state: directory
+      path: "{{ item }}"
+    with_items:
+    - /var/lib/gogs/gogs/conf
+    - /var/lib/gogs/gogs/data
+    - /var/lib/gogs/git
+
+  - name: Configuration de gogs
+    copy:
+      dest: /var/lib/gogs/gogs/conf/app.ini
+      src: gogs/app.ini
+
+  - name: BDD gogs
+    copy:
+      dest: /var/lib/gogs/gogs/data/
+      src: /vagrant_data/gogs/gogs.db
+
+  - name: Repositories gogs
+    unarchive:
+      src: /vagrant_data/gogs/git.tgz
+      dest: /var/lib/gogs/
+      remote_src: yes
+
+  - name: Démarrage de gogs
+    docker_service:
+      project_name: gogs
+      state: present
+      restarted: yes
+      definition:
+        version: '2'
+
+        services:
+          gogs:
+            image: gogs/gogs:latest
+            volumes:
+            - /var/lib/gogs:/data
+            ports:
+            - 8888:3000
+            - "2223:22"
+            restart: always
+
+  - name: Chargement des images drone.io
+    docker_image:
+      state: present
+      load_path: /vagrant_data/images/drone-{{ item }}-0.8.tar
+      name: drone/{{ item }}:0.8
+    with_items:
+    - drone
+    - agent
+
+  - name: Chargement des images additionnelles
+    docker_image:
+      state: present
+      load_path: /vagrant_data/images/{{ item.path }}
+      name: "{{ item.name }}"
+    with_items:
+    - { path: docker-latest.tar, name: docker }
+    - { path: plugins-git-latest.tar, name: plugins/git }
+    - { path: plugins-docker-latest.tar, name: plugins/docker }
+    - { path: python-2.7.15-slim.tar, name: python }
+    - { path: drone-kubectl.tar, name: drone-kubectl }
+    - { path: golang-1.10.3-stretch.tar, name: golang }
+
+  - name: Répertoires pour drone
+    file:
+      state: directory
+      path: /var/lib/drone
+
+  - name: Démarrage de drone
+    docker_service:
+      project_name: drone
+      state: present
+      restarted: yes
+      definition:
+        version: '2'
+
+        services:
+          drone-server:
+            image: drone/drone:0.8
+            ports:
+              - 8000:8000
+              - 9000
+            volumes:
+              - /var/lib/drone:/var/lib/drone/
+            restart: always
+            environment:
+              - DRONE_OPEN=true
+              - DRONE_ADMIN=laurent
+              - DRONE_HOST=http://192.168.56.10:8000
+              - DRONE_GOGS=true
+              - DRONE_GOGS_URL=http://192.168.56.10:8888
+              - DRONE_GOGS_GIT_USERNAME=laurent
+              - DRONE_GOGS_GIT_PASSWORD=laurent
+              - DRONE_SECRET=k8s-demo
+
+          drone-agent:
+            image: drone/agent:0.8
+            command: agent
+            restart: always
+            depends_on: [ drone-server ]
+            volumes:
+              - /var/run/docker.sock:/var/run/docker.sock
+            environment:
+              - DRONE_SERVER=drone-server:9000
+              - DRONE_SECRET=k8s-demo
+
+  - name: Import des images
+    include_tasks: includes/import_image.yml image_src=python image_dest={{ docker_registry }}/python:2.7.15-slim
+
+  - name: Import des images
+    include_tasks: includes/import_image.yml image_src="golang *1.10.3-stretch" image_dest={{ docker_registry }}/golang:1.10.3-stretch
+
+  - name: Group
+    group:
+      name: laurent
+
+  - name: User
+    user:
+      name: laurent
+      group: laurent
+      shell: /bin/bash
+      password: laurent
+
+  - name: Config ssh
+    file:
+      state: directory
+      path: /home/laurent/.ssh
+      owner: laurent
+      group: laurent
+      mode: 0700
+
+  - name: sudoers
+    copy:
+      dest: /etc/sudoers.d/laurent
+      content: |
+        laurent ALL=(ALL) NOPASSWD: ALL
+
+  - name: Config ssh
+    copy:
+      dest: /home/laurent/.ssh/config
+      content: |
+        Host *
+           StrictHostKeyChecking no
+           UserKnownHostsFile=/dev/null
+      owner: laurent
+      group: laurent
+      mode: 0700
+
+  - name: clé ssh
+    copy:
+      src: gogs/{{ item }}
+      dest: /home/laurent/.ssh
+      owner: laurent
+      group: laurent
+      mode: 0600
+    with_items:
+    - id_rsa
+    - id_rsa.pub

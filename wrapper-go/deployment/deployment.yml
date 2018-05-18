@@ -1,0 +1,44 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wrapper-app
+  namespace: my-app
+spec:
+  selector:
+    matchLabels:
+      app: wrapper-app
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: wrapper-app
+    spec:
+      containers:
+      - name: wrapper
+        image: my-docker-registry:5443/wrapper:1.0
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: web
+        args:
+        - -u
+        - http://dlppkidev-app.my-app:8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wrapper-app
+  namespace: my-app
+  labels:
+    app: wrapper-app
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30095
+      name: web
+  selector:
+    app: wrapper-app
+

@@ -1,0 +1,51 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation de kubectl
+    copy:
+      src: /vagrant_data/binaries/kubectl
+      dest: /usr/local/bin/kubectl
+      mode: 0755
+      remote_src: yes
+
+  - name: Répertoire .kube
+    file:
+      state: directory
+      path: /root/.kube
+
+  - name: Copie de l'identité
+    copy:
+      src: /root/enrolment/certs/{{ item }}
+      dest: /root/.kube
+      remote_src: yes
+    with_items:
+    - admin.pem
+    - admin-key.pem
+    - ca.pem
+
+  - name: set-cluster
+    shell: kubectl config set-cluster k8s --certificate-authority=/root/enrolment/certs/ca.pem --embed-certs=true --server=https://{{ public_ip }}:6443
+
+  - name: set-credentials
+    shell: kubectl config set-credentials admin --client-certificate=/root/.kube/admin.pem --client-key=/root/.kube/admin-key.pem
+
+  - name: set-context
+    shell: kubectl config set-context k8s --cluster=k8s --user=admin
+
+  - name: use-context
+    shell: kubectl config use-context k8s
+
+  - name: Bash completion
+    lineinfile:
+      path: /root/.bashrc
+      line: source <(kubectl completion bash)
+
+  - name: Keystore pfx
+    shell: 'openssl pkcs12 -inkey /root/.kube/admin-key.pem -in /root/.kube/admin.pem -export -out /root/.kube/admin.pfx -passout pass:'
+
+  - name: Archive
+    shell: tar czvf /vagrant_data/kubectl-config.tar.gz -C /root .kube/config .kube/admin.pem .kube/admin-key.pem .kube/ca.pem .kube/admin.pfx

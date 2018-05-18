@@ -1,0 +1,16 @@
+[Unit]
+Description=Flanneld overlay address etcd agent
+After=network.target
+After=network-online.target
+Wants=network-online.target
+Before=kubelet.service
+
+[Service]
+ExecStart=/usr/local/bin/flanneld \
+  --etcd-endpoints={% for item in workers_facts.results %}http://{{ item.ansible_facts.ansible_enp0s8.ipv4.address }}:2379{% if not loop.last %},{% endif %}{% endfor %} \
+  --iface=enp0s8
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=kubelet.service

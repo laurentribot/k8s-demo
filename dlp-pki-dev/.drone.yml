@@ -1,0 +1,24 @@
+pipeline:
+  build:
+    image: my-docker-registry:5443/python:2.7.15-slim
+    commands:
+    - pip install --quiet --index-url http://192.168.56.10:9090 --disable-pip-version-check --trusted-host 192.168.56.10 --no-cache-dir -r requirements.txt docutils==0.14
+    - /usr/local/bin/rst2html.py README.rst > dlppkidev/static/index.html
+    - python setup.py sdist
+
+  dockerize:
+    image: plugins/docker
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    registry: my-docker-registry:5443
+    repo: my-docker-registry:5443/dlppkidev
+    mirror: my-docker-registry:5443
+    tags: "1.0"
+    insecure: true
+
+  deploy:
+    image: drone-kubectl
+    manifest: deployment/deployment.yml
+    config: admin.kubeconfig
+    when:
+      branch: master

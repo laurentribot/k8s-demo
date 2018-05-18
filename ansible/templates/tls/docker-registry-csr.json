@@ -1,0 +1,16 @@
+{
+  "CN": "{{ docker_registry | regex_replace (':[0-9]*$', '') }}",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "FR",
+      "L": "Paris",
+      "O": "Docker",
+      "OU": "k8s",
+      "ST": "Paris"
+    }
+  ]
+}

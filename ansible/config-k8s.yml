@@ -1,0 +1,70 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Installation de kubectl
+    copy:
+      src: /vagrant_data/binaries/kubectl
+      dest: /usr/local/bin/kubectl
+      mode: 0755
+      remote_src: yes
+
+  - name: Création du répertoire
+    file:
+      state: directory
+      path: /root/k8s_config
+
+  - name: Génération des config k8s - set-cluster
+    shell: kubectl config set-cluster k8s --certificate-authority=/root/enrolment/certs/ca.pem --embed-certs=true --server=https://{{ item.server }}:6443 --kubeconfig=/root/k8s_config/{{ item.name }}.kubeconfig
+    with_items:
+    - name: kube-proxy
+      server: "{{ public_ip }}"
+    - name: kube-controller-manager
+      server: 127.0.0.1
+    - name: kube-scheduler
+      server: 127.0.0.1
+    - name: admin
+      server: 127.0.0.1
+
+  - name: Génération des config k8s - set-cluster
+    shell: kubectl config set-cluster k8s --certificate-authority=/root/enrolment/certs/ca.pem --embed-certs=true --server=https://{{ public_ip }}:6443 --kubeconfig=/root/k8s_config/{{ item }}.kubeconfig
+    with_items: "{{ groups['workers'] }}"
+
+  - name: Génération des config k8s - set-credentials
+    shell: kubectl config set-credentials {{ item.user }} --client-certificate=/root/enrolment/certs/{{ item.name }}.pem --client-key=/root/enrolment/certs/{{ item.name }}-key.pem --embed-certs=true --kubeconfig=/root/k8s_config/{{ item.name }}.kubeconfig
+    with_items:
+    - name: kube-proxy
+      user: system:kube-proxy
+    - name: kube-controller-manager
+      user: system:kube-controller-manager
+    - name: kube-scheduler
+      user: system:kube-scheduler
+    - name: admin
+      user: admin
+
+  - name: Génération des config k8s - set-credentials
+    shell: kubectl config set-credentials system:node:{{ item }} --client-certificate=/root/enrolment/certs/{{ item }}.pem --client-key=/root/enrolment/certs/{{ item }}-key.pem --embed-certs=true --kubeconfig=/root/k8s_config/{{ item }}.kubeconfig
+    with_items: "{{ groups['workers'] }}"
+
+  - name: Génération des config k8s - set-context
+    shell: kubectl config set-context default --cluster=k8s --user={{ item.user }} --kubeconfig=/root/k8s_config/{{ item.name }}.kubeconfig
+    with_items:
+    - name: kube-proxy
+      user: system:kube-proxy
+    - name: kube-controller-manager
+      user: system:kube-controller-manager
+    - name: kube-scheduler
+      user: system:kube-scheduler
+    - name: admin
+      user: admin
+
+  - name: Génération des config k8s - set-context
+    shell: kubectl config set-context default --cluster=k8s --user=system:node:{{ item }} --kubeconfig=/root/k8s_config/{{ item }}.kubeconfig
+    with_items: "{{ groups['workers'] }}"
+
+  - name: Génération des config k8s - use-context
+    shell: kubectl config use-context default --kubeconfig=/root/k8s_config/{{ item }}.kubeconfig
+    with_items: "{{ groups['workers'] + ['kube-proxy', 'kube-controller-manager', 'kube-scheduler', 'admin'] }}"
