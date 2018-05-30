@@ -7,7 +7,7 @@
 
   - name: Installation de docker
     apt:
-      name: docker-ce
+      name: docker.io
 
   - name: Génération des certificats
     shell: cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=/root/enrolment/config/ca-config.json -hostname={{ docker_registry | regex_replace (':[0-9]*$', '') }},{{ ansible_enp0s8.ipv4.address }} -profile=kubernetes /root/enrolment/config/docker-registry-csr.json | cfssljson -bare docker-registry

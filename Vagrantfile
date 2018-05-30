@@ -43,9 +43,11 @@ Vagrant.configure("2") do |config|
       box.vm.provision "shell", privileged: true, inline: "netplan apply"
       box.vm.provision "shell", privileged: true, inline: "sed 's/preserve_hostname: false/preserve_hostname: true/' -i /etc/cloud/cloud.cfg"
 
+      # User ansible
       box.vm.provision "file", source: "scripts/users/create-users.sh", destination: "/tmp/create-users.sh"
       box.vm.provision "shell", privileged: true, inline: "bash /tmp/create-users.sh"
 
+      # Config apt
       box.vm.provision "file", source: "scripts/apt/config-apt.sh", destination: "/tmp/config-apt.sh"
       box.vm.provision "shell", privileged: true, inline: "bash /tmp/config-apt.sh"
 
@@ -53,8 +55,10 @@ Vagrant.configure("2") do |config|
 
       if "#{server[:name]}" == 'k8s-demo'
 
-        box.vm.provision "shell", privileged: true, inline: "pip install --quiet /vagrant_data/python/backports.ssl_match_hostname-3.5.0.1.tar.gz"
-        box.vm.provision "shell", privileged: true, inline: "pip install --quiet /vagrant_data/python/*.whl --no-deps"
+        box.vm.provision "file", source: "scripts/pypi/install-pypi.sh", destination: "/tmp/install-pypi.sh"
+        box.vm.provision "shell", privileged: true, inline: "bash /tmp/install-pypi.sh"
+
+        box.vm.provision "shell", privileged: true, inline: "pip install --quiet ansible docker-compose"
 
         box.vm.provision "file", source: "scripts/users/inject-ansible-key.sh", destination: "/tmp/inject-ansible-key.sh"
         box.vm.provision "shell", privileged: false, inline: "bash /tmp/inject-ansible-key.sh"

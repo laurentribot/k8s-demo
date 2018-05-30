@@ -1,0 +1,5 @@
+---
+ca_infra_file: /etc/pki-certs/ca.pem
+ca_infra_key_file: /etc/pki-certs/ca-key.pem
+ca_infra_edf_file: /etc/pki-certs/ca.pem
+ca_infra_edf_key_file: /etc/pki-certs/ca-key.pem

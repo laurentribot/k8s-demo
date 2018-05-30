@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dlppkidev-deployment
+spec:
+  selector:
+    matchLabels:
+      app: dlppkidev
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: dlppkidev
+    spec:
+      containers:
+      - name: dlppkidev
+        image: my-docker-registry:5443/dlppkidev:1.0
+        volumeMounts:
+          - name: dlppkidev-config
+            mountPath: /etc/dlppkidev
+          - name: dlppkidev-secrets
+            mountPath: /etc/pki-certs
+        ports:
+        - containerPort: 8080
+      volumes:
+      - name: dlppkidev-config
+        configMap:
+          name: dlppkidev-config
+      - name: dlppkidev-secrets
+        secret:
+          secretName: dlppkidev-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dlppkidev-service
+  labels:
+    name: dlppkidev-service
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+  selector:
+    app: dlppkidev

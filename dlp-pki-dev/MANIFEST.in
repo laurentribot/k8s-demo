@@ -1,0 +1,5 @@
+include README.rst
+include VERSION
+include dlppkidev/static/*
+include dlppkidev/templates/*
+include requirements.txt

@@ -1,0 +1,126 @@
+---
+- hosts: localhost
+  gather_facts: yes
+  become: yes
+
+  tasks:
+
+  - name: Récupération des certificats admin
+    copy:
+      src: /root/enrolment/certs/{{ item }}
+      dest: /home/laurent
+      owner: laurent
+      group: laurent
+      remote_src: yes
+    with_items:
+    - ca.pem
+    - ca-key.pem
+    - admin.pem
+    - admin-key.pem
+
+  - name: Installation de drone-token
+    copy:
+      src: /vagrant_data/binaries/drone-token
+      dest: /usr/local/bin
+      mode: 0755
+
+  - name: Création du kubeconfig
+    become_user: laurent
+    block:
+    - name: set-cluster
+      shell: kubectl config set-cluster k8s --certificate-authority=/home/laurent/ca.pem --embed-certs=true --server=https://{{ public_ip }}:6443 --kubeconfig=/home/laurent/dlp-pki-dev/admin.kubeconfig
+
+    - name: set-credentials
+      shell: kubectl config set-credentials admin --client-certificate=/home/laurent/admin.pem --client-key=/home/laurent/admin-key.pem --embed-certs=true --kubeconfig=/home/laurent/dlp-pki-dev/admin.kubeconfig
+
+    - name: set-context
+      shell: kubectl config set-context k8s --cluster=k8s --user=admin --kubeconfig=/home/laurent/dlp-pki-dev/admin.kubeconfig
+
+    - name: use-context
+      shell: kubectl config use-context k8s --kubeconfig=/home/laurent/dlp-pki-dev/admin.kubeconfig
+
+    - name: KUBECONFIG
+      lineinfile:
+        line: 'export KUBECONFIG=/home/laurent/dlp-pki-dev/admin.kubeconfig'
+        path: /home/laurent/.bashrc
+
+    - name: Config git
+      copy:
+        dest: /home/laurent/.gitconfig
+        content: |
+          [user]
+                  email = laurent.ribot@enedis.fr
+                  name = laurent
+        owner: laurent
+        group: laurent
+
+    - name: Initialisation repository
+      shell: git init && git remote add origin ssh://git@192.168.56.10:2223/laurent/dlp-pki-dev.git
+      args:
+        chdir: /home/laurent/dlp-pki-dev
+
+    - name: .gitignore
+      copy:
+        dest: /home/laurent/dlp-pki-dev/.gitignore
+        content: |
+         deployment/dlppkidev.yml
+
+    - name: First commit pour intialisation de la branch master
+      shell: git add .gitignore && git commit -m "First commit" && git push -u origin master
+      args:
+        chdir: /home/laurent/dlp-pki-dev
+
+    - name: Copie des sources
+      shell: cp -r /vagrant/dlp-pki-dev /home/laurent
+
+    - name: Branch develop
+      shell: git checkout -b develop
+      args:
+        chdir: /home/laurent/dlp-pki-dev
+
+    - name: Récupération du token drone
+      shell: drone-token
+      register: drone_token
+      become_user: root
+
+    - debug: var=drone_token
+
+    - name: Tempo
+      pause:
+        seconds: 1
+
+    - name: Activation du repository
+      shell: "curl -XPOST \"http://192.168.56.10:8000/api/repos/laurent/dlp-pki-dev?access_token={{ drone_token.stdout }}\""
+
+    - name: Privilèges du repository
+      shell: "curl -XPATCH -H \"Content-Type: application/json\" --data '{\"trusted\": true, \"allow_pr\": false}' \"http://192.168.56.10:8000/api/repos/laurent/dlp-pki-dev?access_token={{ drone_token.stdout }}\""
+
+  - name: Config nginx
+    copy:
+      dest: /etc/nginx/sites-available/dlppkidev
+      content: |
+        upstream dlppkidev {
+          server k8s-worker-0:30080;
+          server k8s-worker-1:30080;
+        }
+
+        server {
+          listen 8090;
+
+          location / {
+            proxy_pass http://dlppkidev;
+          }
+        }
+
+  - name: Lien symbolique
+    file:
+      state: link
+      src: /etc/nginx/sites-available/dlppkidev
+      dest: /etc/nginx/sites-enabled/dlppkidev
+
+  - name: Redémarrage de nginx
+    systemd:
+      name: nginx
+      daemon_reload: yes
+      enabled: yes
+      state: restarted
