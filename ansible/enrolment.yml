@@ -58,6 +58,7 @@
     - kubernetes-csr.json
     - kube-scheduler-csr.json
     - service-account-csr.json
+    - aggregator-csr.json
 
   - name: Copie des csr
     template:
@@ -100,6 +101,8 @@
       hostnames:
       - "{{ docker_registry | regex_replace (':[0-9]*$', '') }}"
       - "{{ ansible_enp0s8.ipv4.address }}"
+    - csr: /root/enrolment/config/aggregator-csr.json
+      name: aggregator
     loop_control:
       label: "{{ item.name }}"
 

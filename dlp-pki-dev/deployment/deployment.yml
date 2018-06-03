@@ -1,20 +1,27 @@
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: my-app
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dlppkidev-deployment
+  name: dlppkidev-app
+  namespace: my-app
 spec:
   selector:
     matchLabels:
-      app: dlppkidev
+      app: dlppkidev-app
   replicas: 1
   template:
     metadata:
       labels:
-        app: dlppkidev
+        app: dlppkidev-app
     spec:
       containers:
       - name: dlppkidev
         image: my-docker-registry:5443/dlppkidev:1.0
+        imagePullPolicy: Always
         volumeMounts:
           - name: dlppkidev-config
             mountPath: /etc/dlppkidev
@@ -22,6 +29,13 @@ spec:
             mountPath: /etc/pki-certs
         ports:
         - containerPort: 8080
+          name: web
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 15
+          timeoutSeconds: 5
       volumes:
       - name: dlppkidev-config
         configMap:
@@ -33,14 +47,31 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dlppkidev-service
+  name: dlppkidev-app
+  namespace: my-app
   labels:
-    name: dlppkidev-service
+    app: dlppkidev-app
 spec:
   type: NodePort
   ports:
     - port: 8080
       targetPort: 8080
       nodePort: 30080
+      name: web
   selector:
-    app: dlppkidev
+    app: dlppkidev-app
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: dlppkidev-app
+  labels:
+    service-monitor: metrics
+spec:
+  selector:
+    matchLabels:
+      app: dlppkidev-app
+  namespaceSelector:
+    any: true
+  endpoints:
+  - port: web

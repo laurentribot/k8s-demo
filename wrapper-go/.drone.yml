@@ -1,0 +1,22 @@
+pipeline:
+  build:
+    image: my-docker-registry:5443/golang:1.10.3-stretch
+    commands:
+    - echo "[url \"http://192.168.56.10:8888/\"]\n\tinsteadOf =  https://github.com/" >> /root/.gitconfig && go get -d . && CGO_ENABLED=0 GOOS=linux go build -o wrapper .
+
+  publish:
+    image: plugins/docker
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    registry: my-docker-registry:5443
+    repo: my-docker-registry:5443/wrapper
+    mirror: my-docker-registry:5443
+    tags: "1.0"
+    insecure: true
+
+  deploy:
+    image: drone-kubectl
+    manifest: deployment/deployment.yml
+    config: admin.kubeconfig
+    when:
+      branch: master

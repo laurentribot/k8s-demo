@@ -32,7 +32,8 @@ Vagrant.configure("2") do |config|
       box.vm.provision "shell", privileged: true, inline: "cat /tmp/netplan > /etc/netplan/50-cloud-init.yaml"
 
       # Ajout des VMs au fichier /etc/hosts
-      box.vm.provision "shell", privileged: true, inline: "cat /tmp/hosts >> /etc/hosts"
+      box.vm.provision "shell", privileged: true, inline: "cat /tmp/hosts > /etc/hosts"
+      box.vm.provision "shell", privileged: true, inline: "sed -i 's/^search/# search/' /etc/resolv.conf"
 
       # Activation ssh par password
       box.vm.provision "shell", privileged: true, inline: "sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config"
@@ -74,6 +75,7 @@ Vagrant.configure("2") do |config|
         box.vm.provision "shell", inline: "cd /ansible; ansible-playbook -i hosts.yml docker-registry.yml"
         box.vm.provision "shell", inline: "cd /ansible; ansible-playbook -i hosts.yml dns.yml"
         box.vm.provision "shell", inline: "cd /ansible; ansible-playbook -i hosts.yml dashboard.yml"
+        box.vm.provision "shell", inline: "cd /ansible; ansible-playbook -i hosts.yml auto-scaling.yml"
       end
 
       if "#{server[:name]}".start_with?("k8s-worker")

@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import os
+import time
 import base64
 from OpenSSL import crypto
 import hashlib
 from flask import Flask, request, jsonify, abort, make_response, render_template, json
+from prometheus_client import generate_latest, REGISTRY, Counter, Gauge, Histogram
 
 
 VERSION = "1.0"
@@ -19,6 +21,10 @@ DEFAULT_CONFIG = dict(
     ca_person_key_file='ca_person.key',
 )
 
+TIMINGS = Histogram('http_requests_inprogress', 'HTTP request latency (seconds)')
+REQUESTS = Counter('http_requests_total', 'Total HTTP Requests (count)', ['method', 'endpoint', 'status_code'])
+IN_PROGRESS = Gauge('http_requests_inprogress', 'Number of in progress HTTP requests')
+
 CERTIFICATE_SERVICE_REQUEST = dict(csr="pem csr base64 encoded")
 CERTIFICATE_SERVICE_RESPONSE = dict(certificate="pem crt base64 encoded")
 IDENTITIES_SERVICE_REQUEST = dict(identities=["identity1", "identity2"])
@@ -27,6 +33,8 @@ IDENTITIES_SERVICE_RESPONSE = [dict(certificate="pem crt base64 encoded", pkey="
 CONTENT_TYPE = "application/json"
 
 CRL_DISTRIBUTION_POINTS = 'URI:http://dlp-pki-dev.G2N-Linky-Paris.gate-noe.enedis.fr:8080/crl'
+
+TIMER = 0
 
 app = Flask(__name__)
 
@@ -38,6 +46,13 @@ ca_person_cert = None
 ca_person_key = None
 ca_person_enedis_cert = None
 ca_person_enedis_key = None
+
+
+def shutdown_server():
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        raise RuntimeError('Not running with the Werkzeug Server')
+    func()
 
 
 def merge_dicts(*dict_args):
@@ -204,9 +219,12 @@ def help_identities():
 
 
 @app.route('/identity/<identity>', methods=['GET'])
+@IN_PROGRESS.track_inprogress()
+@TIMINGS.time()
 def route_identity(identity):
     csr, pkey = gen_pkey_req(identity)
     cert = output_cert(get_certificate(csr))
+    REQUESTS.labels(method='GET', endpoint="/identity", status_code=200).inc()
     return "\n".join([pkey, base64.b64decode(cert['certificate'])]), 200
 
 
@@ -309,6 +327,35 @@ def route_ac_personnes_enedis():
     return gen_crl(ca_person_enedis_cert, ca_person_enedis_key, 'der', ['0C6AFACB6B71BC8140AEF1BC5C5CDA0FD02D4C99E8']), 200
 
 
+@app.route('/shutdown', methods=['POST'])
+def shutdown():
+    shutdown_server()
+    return 'Server shutting down...'
+
+
+@app.route('/healthz')
+def healthz():
+    time.sleep(TIMER)
+    return 'ok', 200
+
+
+@app.route('/freeze/<timer>', methods=['GET'])
+def freeze(timer):
+    global TIMER
+    TIMER = int(timer)
+    return 'New timer : {timer}'.format(timer=TIMER), 200
+
+
+@app.route('/timer', methods=['GET'])
+def timer():
+    return 'Timer : {timer}'.format(timer=TIMER), 200
+
+
+@app.route('/metrics')
+def metrics():
+    return generate_latest(REGISTRY)
+
+
 @app.route('/')
 def root():
     return app.send_static_file('index.html')
@@ -323,6 +370,7 @@ def run(param_config=None):
     global ca_person_key
     global ca_person_enedis_cert
     global ca_person_enedis_key
+    global TIMER
     run_config = merge_dicts(DEFAULT_CONFIG, param_config)
     ca_infra_cert = load_ca_cert(run_config.get('ca_infra_file'))
     ca_infra_key = load_ca_private_key(run_config.get('ca_infra_key_file'))
@@ -333,6 +381,7 @@ def run(param_config=None):
     ca_infra_edf_cert = load_ca_cert(run_config.get('ca_infra_edf_file'))
     ca_infra_edf_key = load_ca_private_key(run_config.get('ca_infra_edf_key_file'))
     app.run(run_config.get('host'), run_config.get('port'))
+    TIMER = 0
 
 
 if __name__ == "__main__":

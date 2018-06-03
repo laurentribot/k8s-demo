@@ -15,5 +15,16 @@
       src: dns/kube-dns.yaml
       dest: /root/deployments/dns
 
-  - name: kube-dns
-    shell: kubectl create -f /root/deployments/dns/kube-dns.yaml
+  - name: Configuration dns
+    template:
+      src: dns/core-dns.yaml
+      dest: /root/deployments/dns
+
+#  - name: kube-dns
+#    shell: kubectl create -f /root/deployments/dns/kube-dns.yaml
+
+  - name: core-dns
+    shell: kubectl apply -f /root/deployments/dns/core-dns.yaml
+
+#  - name: core-dns
+#    shell: kubectl delete --namespace=kube-system deployment kube-dns

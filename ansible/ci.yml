@@ -44,16 +44,22 @@
       remote_src: yes
 
   - name: Démarrage de gogs
-    docker_container:
-      name: gogs
-      state: started
-      restart: yes
-      volumes:
-      - /var/lib/gogs:/data
-      ports:
-      - 8888:3000
-      - "2223:22"
-      image: gogs/gogs:latest
+    docker_service:
+      project_name: gogs
+      state: present
+      restarted: yes
+      definition:
+        version: '2'
+
+        services:
+          gogs:
+            image: gogs/gogs:latest
+            volumes:
+            - /var/lib/gogs:/data
+            ports:
+            - 8888:3000
+            - "2223:22"
+            restart: always
 
   - name: Chargement des images drone.io
     docker_image:
@@ -75,6 +81,7 @@
     - { path: plugins-docker-latest.tar, name: plugins/docker }
     - { path: python-2.7.15-slim.tar, name: python }
     - { path: drone-kubectl.tar, name: drone-kubectl }
+    - { path: golang-1.10.3-stretch.tar, name: golang }
 
   - name: Répertoires pour drone
     file:
@@ -121,6 +128,9 @@
 
   - name: Import des images
     include_tasks: includes/import_image.yml image_src=python image_dest={{ docker_registry }}/python:2.7.15-slim
+
+  - name: Import des images
+    include_tasks: includes/import_image.yml image_src="golang *1.10.3-stretch" image_dest={{ docker_registry }}/golang:1.10.3-stretch
 
   - name: Group
     group:

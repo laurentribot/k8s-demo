@@ -50,6 +50,9 @@ metadata:
   namespace: kube-system
   labels:
     addonmanager.kubernetes.io/mode: EnsureExists
+#data:
+#  upstreamNameservers: |-
+#    ["127.0.0.53"]
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment

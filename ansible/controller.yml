@@ -47,6 +47,8 @@
     - kubernetes.pem
     - service-account-key.pem
     - service-account.pem
+    - aggregator.pem
+    - aggregator-key.pem
 
   - name: Déploiement de encryption-config.yaml
     copy:
